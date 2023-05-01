@@ -1,0 +1,85 @@
+---
+title: "Homework4"
+output: html_document
+---
+
+
+```{r}
+# Load required packages
+library(tidyverse)
+library(lubridate)
+library(caret)
+library(readr)
+library(e1071)
+library(magrittr)
+library(dplyr)
+
+# Load and prepare data
+df_cases <- read_csv("/Users/euni/Desktop/UW Madison/STAT 436/HW4/Case.csv", col_types = cols())
+df_weather <- read_csv("/Users/euni/Desktop/UW Madison/STAT 436/HW4/weather.csv", col_types = cols())
+ 
+df_cases <- df_cases %>%
+  filter(!is.na(confirmed)) %>%
+  mutate(
+    confirmed = ymd(confirmed),
+    onset_date = ifelse(is.na(onset_date), confirmed - 7, ymd(onset_date)),
+    onset_date = ymd(onset_date)
+  ) %>%
+  select(confirmed, onset_date, province)
+
+df_weather <- df_weather %>%
+  mutate(date = ymd(date)) %>%
+  select(date, avg_temp, min_temp, max_temp, avg_relative_humidity, precipitation, max_wind_speed, most_wind_dir)
+
+# Merge cases and weather data
+df <- inner_join(df_cases, df_weather, by = "date") %>%
+  select(confirmed, onset_date, province, avg_relative_humidity, avg_temp, min_temp, max_temp, precipitation, max_wind_speed, most_wind_dir)
+
+# Explore data
+# Number of cases and relative humidity rate by province
+df %>%
+  filter(avg_relative_humidity >= 40 & avg_relative_humidity <= 60) %>%
+  group_by(province) %>%
+  summarize(n_cases = n()) %>%
+  ggplot(aes(x = reorder(province, n_cases), y = n_cases)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(x = "Province", y = "Number of cases",
+       title = "Number of Cases and Relative Humidity Rate by Province") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Principal Component Analysis
+df_pca <- df %>%
+  select(avg_temp, min_temp, max_temp, precipitation, max_wind_speed, most_wind_dir) %>%
+  na.omit() %>%
+  scale() %>%
+  prcomp()
+
+df_pca %>%
+  ggplot(aes(x = 1:6, y = cumsum(prop.var) * 100)) +
+  geom_line() +
+  labs(x = "Principal Component", y = "Cumulative Variance Explained (%)",
+       title = "Cumulative Variance Explained by Principal Component") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Logistic regression
+df_lm <- df %>%
+  select(avg_relative_humidity, max_temp, min_temp) %>%
+  na.omit()
+
+set.seed(123)
+trainIndex <- createDataPartition(df_lm$avg_relative_humidity, p = .7, list = FALSE)
+df_train <- df_lm[trainIndex, ]
+df_test <- df_lm[-trainIndex, ]
+
+fitControl <- trainControl(method = "cv", number = 10)
+lm_formula <- as.formula(paste("avg_relative_humidity ~ max_temp + min_temp"))
+
+lm_model <- train(lm_formula, data = df_train, method = "glm", trControl = fitControl)
+lm_model$results
+
+# Coefficients of logistic regression
+lm_coef <- lm_model$finalModel$coefficients
+lm_coef
+
+```
+
